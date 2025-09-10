@@ -1,0 +1,20 @@
+name: "Git Mirror Helper"
+description: "Fetch mirrors from an organization and set up git url rewrite rules"
+author: "GeorgH93"
+inputs:
+  server:
+    description: "Base URL of your git server"
+    required: true
+  org:
+    description: "Organization name in your git server"
+    required: true
+  api_token:
+    description: "API token for Gitea"
+    required: false
+    secret: true
+runs:
+  using: "node24"
+  main: "index.js"
+branding:
+  icon: "git-branch"
+  color: "blue"
