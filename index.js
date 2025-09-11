@@ -1,4 +1,22 @@
 #!/usr/bin/env node
+
+/**
+ * Copyright (C) 2025  GeorgH93
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import { execSync } from "child_process";
 import fetch from "node-fetch";
 
@@ -31,8 +49,8 @@ async function main() {
 		}
 
     if (!resp.ok) {
-      console.error("❌ Failed to fetch repos:", resp.status, await resp.text());
-      process.exit(1);
+ *  console.error("❌ Failed to fetch repos:", resp.status, await resp.text());
+ *  process.exit(1);
     }
 
     const data = await resp.json();
@@ -44,21 +62,21 @@ async function main() {
 
   for (const repo of repos) {
     if (repo.mirror) {
-      console.log(`➡️ Mirror repo found: ${repo.full_name}`);
+ *  console.log(`➡️ Mirror repo found: ${repo.full_name}`);
 
-      const oldUrl = stripGitSuffix(repo.clone_url);
-      const newUrl = stripGitSuffix(repo.clone_url); // force HTTPS
+ *  const oldUrl = stripGitSuffix(repo.clone_url);
+ *  const newUrl = stripGitSuffix(repo.clone_url); // force HTTPS
 
-      console.log(`   Adding rewrite: ${newUrl} insteadOf ${oldUrl}`);
+ *  console.log(`   Adding rewrite: ${newUrl} insteadOf ${oldUrl}`);
 
-      try {
-        execSync(
-          `git config --global url."${newUrl}".insteadOf "${oldUrl}"`,
-          { stdio: "inherit" }
-        );
-      } catch (e) {
-        console.error("⚠️ Failed to set git config:", e.message);
-      }
+ *  try {
+ *    execSync(
+ *  * `git config --global url."${newUrl}".insteadOf "${oldUrl}"`,
+ *  * { stdio: "inherit" }
+ *    );
+ *  } catch (e) {
+ *    console.error("⚠️ Failed to set git config:", e.message);
+ *  }
     }
   }
 
