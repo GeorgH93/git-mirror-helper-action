@@ -12,9 +12,14 @@ inputs:
     description: "API token for Gitea"
     required: false
     secret: true
+  use_include:
+    description: "Write rewrites to a separate include file instead of global config"
+    required: false
+    default: "true"
 runs:
   using: "node24"
   main: "index.js"
+  post: "cleanup.js"
 branding:
   icon: "git-branch"
   color: "blue"

@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+
+/**
+ * Copyright (C) 2025  GeorgH93
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+import { execSync } from "child_process";
+import fs from "fs";
+import os from "os";
+import path from "path";
+
+const INCLUDE_FILE = path.join(os.homedir(), ".git-mirrors");
+
+try {
+	execSync(`git config --global --unset-all include.path "${INCLUDE_FILE}"`);
+	console.log(`🧹 Removed include.path for ${INCLUDE_FILE}`);
+} catch {
+	console.log("ℹ️ No include.path found to remove");
+}
+try {
+	if (fs.existsSync(INCLUDE_FILE)) {
+		fs.unlinkSync(INCLUDE_FILE);
+		console.log(`🗑️ Deleted ${INCLUDE_FILE}`);
+	}
+} catch (err) {
+	console.error("⚠️ Failed to delete include file:", err.message);
+}
