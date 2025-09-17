@@ -24,7 +24,6 @@ const SERVER_URL = process.env.INPUT_SERVER;
 const ORG = process.env.INPUT_ORG;
 const API_TOKEN = process.env.INPUT_API_TOKEN;
 const USE_INCLUDE = (process.env.INPUT_USE_INCLUDE || "false").toLowerCase() !== "false";
-const CLEANUP = (process.env.INPUT_CLEANUP || "true").toLowerCase() !== "false";
 
 const INCLUDE_FILE = path.join(os.homedir(), ".git-mirrors");
 
@@ -63,37 +62,37 @@ async function fetchRepos() {
 }
 
 function addIncludeFile() {
-  console.log(`📝 Using include file: ${INCLUDE_FILE}`);
-  if (!fs.existsSync(INCLUDE_FILE)) {
-    fs.writeFileSync(INCLUDE_FILE, "[include]\n");
-  }
+	console.log(`📝 Using include file: ${INCLUDE_FILE}`);
+	if (!fs.existsSync(INCLUDE_FILE)) {
+		fs.writeFileSync(INCLUDE_FILE, "[include]\n");
+	}
 
-  // ensure it's included in global gitconfig
-  try {
-    execSync(`git config --global --add include.path "${INCLUDE_FILE}"`);
-  } catch (e) {
-    console.error("⚠️ Failed to add include.path:", e.message);
-  }
+	// ensure it's included in global gitconfig
+	try {
+		execSync(`git config --global --add include.path "${INCLUDE_FILE}"`);
+	} catch (e) {
+		console.error("⚠️ Failed to add include.path:", e.message);
+	}
 }
 
 function removeIncludeFile() {
-  console.log(`🧹 Cleaning up include file: ${INCLUDE_FILE}`);
-  try {
-    execSync(`git config --global --unset-all include.path "${INCLUDE_FILE}"`);
-  } catch {
-    console.log("ℹ️ No include.path to remove");
-  }
+	console.log(`🧹 Cleaning up include file: ${INCLUDE_FILE}`);
+	try {
+		execSync(`git config --global --unset-all include.path "${INCLUDE_FILE}"`);
+	} catch {
+		console.log("ℹ️ No include.path to remove");
+	}
 }
 
 function addRewrite(oldUrl, newUrl) {
-  if (USE_INCLUDE) {
-    // write to include file
-    const configLine = `\n[url "${newUrl}"]\n\tinsteadOf = ${oldUrl}\n`;
-    fs.appendFileSync(INCLUDE_FILE, configLine);
-  } else {
-    // write to global config
-    execSync(`git config --global url."${newUrl}".insteadOf "${oldUrl}"`);
-  }
+	if (USE_INCLUDE) {
+		// write to include file
+		const configLine = `\n[url "${newUrl}"]\n\tinsteadOf = ${oldUrl}\n`;
+		fs.appendFileSync(INCLUDE_FILE, configLine);
+	} else {
+		// write to global config
+		execSync(`git config --global url."${newUrl}".insteadOf "${oldUrl}"`);
+	}
 }
 
 async function main() {
@@ -115,7 +114,7 @@ async function main() {
 			console.log(`   Adding rewrite: ${newUrl} insteadOf ${oldUrl}`);
 
 			try {
-        			addRewrite(oldUrl, newUrl);
+				addRewrite(oldUrl, newUrl);
 			} catch (e) {
 				console.error("⚠️ Failed to set git config:", e.message);
 			}
