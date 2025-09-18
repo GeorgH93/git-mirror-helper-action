@@ -23,7 +23,7 @@ import fetch from "node-fetch";
 const SERVER_URL = process.env.INPUT_SERVER;
 const ORG = process.env.INPUT_ORG;
 const API_TOKEN = process.env.INPUT_API_TOKEN;
-const USE_INCLUDE = (process.env.INPUT_USE_INCLUDE || "false").toLowerCase() !== "false";
+const USE_INCLUDE = (process.env.INPUT_USE_INCLUDE || "true").toLowerCase() !== "false";
 
 const INCLUDE_FILE = path.join(os.homedir(), ".git-mirrors");
 
