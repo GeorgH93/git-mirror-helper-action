@@ -18,7 +18,6 @@
  */
 
 import { execSync } from "child_process";
-import fetch from "node-fetch";
 
 const SERVER_URL = process.env.INPUT_SERVER;
 const ORG = process.env.INPUT_ORG;
