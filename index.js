@@ -17,7 +17,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { execSync } from "child_process";
+const { execSync } = require("child_process");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 
 const SERVER_URL = process.env.INPUT_SERVER;
 const ORG = process.env.INPUT_ORG;
