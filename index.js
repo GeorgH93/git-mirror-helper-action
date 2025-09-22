@@ -71,7 +71,7 @@ function addIncludeFile() {
 
 	// ensure it's included in global gitconfig
 	try {
-		execSync(`git config --global --add include.path "${INCLUDE_FILE}"`);
+		execSync(`echo git config --global --add include.path "${INCLUDE_FILE}"`);
 	} catch (e) {
 		console.error("⚠️ Failed to add include.path:", e.message);
 	}
@@ -110,7 +110,7 @@ async function main() {
 		if (repo.mirror) {
 			console.log(`➡️ Mirror repo found: ${repo.full_name}`);
 
-			const oldUrl = stripGitSuffix(repo.clone_url);
+			const oldUrl = stripGitSuffix(repo.original_url);
 			const newUrl = stripGitSuffix(repo.clone_url); // force HTTPS
 
 			console.log(`   Adding rewrite: ${newUrl} insteadOf ${oldUrl}`);
