@@ -17,10 +17,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { execSync } from "child_process";
-import fs from "fs";
-import os from "os";
-import path from "path";
+const { execSync } = require("child_process");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 
 const INCLUDE_FILE = path.join(os.homedir(), ".git-mirrors");
 
