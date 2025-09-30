@@ -37,6 +37,51 @@ jobs:
         uses: actions/checkout@v4
 ```
 
+### Archiving the Mirror List
+
+You can use the `git-mirror-list-file` output to archive the generated mirror list file as a workflow artifact:
+
+```yaml
+name: Setup Git Mirrors with Archive
+on:
+  workflow_dispatch:
+
+jobs:
+  setup-mirrors:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Git Mirrors
+        id: mirrors
+        uses: GeorgH93/git-mirror-helper-action@v1
+        with:
+          server: 'https://git.example.com'
+          org: 'my-organization'
+          api_token: ${{ secrets.GITEA_TOKEN }}
+
+      - name: Archive mirror list
+        uses: actions/upload-artifact@v4
+        with:
+          name: git-mirror-list
+          path: ${{ steps.mirrors.outputs.git-mirror-list-file }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+```
+
+### Custom Output File Path
+
+To specify a custom location for the mirror list file:
+
+```yaml
+- name: Setup Git Mirrors
+  id: mirrors
+  uses: GeorgH93/git-mirror-helper-action@v1
+  with:
+    server: 'https://git.example.com'
+    org: 'my-organization'
+    output_file: '${{ runner.temp }}/mirrors.ini'
+```
+
 ## Inputs
 
 | Input | Description | Required | Default |
@@ -45,6 +90,13 @@ jobs:
 | `org` | Organization name in your git server | ✅ Yes | - |
 | `api_token` | API token for authentication (recommended for private repos) | ❌ No | - |
 | `use_include` | Write rewrites to a separate include file instead of global config | ❌ No | `true` |
+| `output_file` | Custom path for the mirror list file | ❌ No | `~/.git-mirrors` |
+
+## Outputs
+
+| Output | Description |
+|--------|-------------|
+| `git-mirror-list-file` | Path to the mirror list file |
 
 ## How It Works
 

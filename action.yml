@@ -16,6 +16,12 @@ inputs:
     description: "Write rewrites to a separate include file instead of global config"
     required: false
     default: "true"
+  output_file:
+    description: "Custom path for the mirror list file"
+    required: false
+outputs:
+  git-mirror-list-file:
+    description: "Path to the mirror list file"
 runs:
   using: "node24"
   main: "index.js"

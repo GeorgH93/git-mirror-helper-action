@@ -22,18 +22,18 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const INCLUDE_FILE = path.join(os.homedir(), ".git-mirrors");
+const OUTPUT_FILE = process.env.INPUT_OUTPUT_FILE || path.join(os.homedir(), ".git-mirrors");
 
 try {
-	execSync(`git config --global --unset-all include.path "${INCLUDE_FILE}"`);
-	console.log(`🧹 Removed include.path for ${INCLUDE_FILE}`);
+	execSync(`git config --global --unset-all include.path "${OUTPUT_FILE}"`);
+	console.log(`🧹 Removed include.path for ${OUTPUT_FILE}`);
 } catch {
 	console.log("ℹ️ No include.path found to remove");
 }
 try {
-	if (fs.existsSync(INCLUDE_FILE)) {
-		fs.unlinkSync(INCLUDE_FILE);
-		console.log(`🗑️ Deleted ${INCLUDE_FILE}`);
+	if (fs.existsSync(OUTPUT_FILE)) {
+		fs.unlinkSync(OUTPUT_FILE);
+		console.log(`🗑️ Deleted ${OUTPUT_FILE}`);
 	}
 } catch (err) {
 	console.error("⚠️ Failed to delete include file:", err.message);
