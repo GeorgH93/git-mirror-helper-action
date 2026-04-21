@@ -17,7 +17,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -25,43 +25,83 @@ const path = require("path");
 const USE_INCLUDE = (process.env.INPUT_USE_INCLUDE || "true").toLowerCase() !== "false";
 const OUTPUT_FILE = process.env.INPUT_OUTPUT_FILE || path.join(os.homedir(), ".git-mirrors");
 
-if (USE_INCLUDE) {
+function state(name) {
+	return process.env[`STATE_${name}`] ?? process.env[`STATE_${name.toUpperCase()}`];
+}
+
+const CREATED_FILE = state("created_file") === "true";
+const ADDED_INCLUDE = state("added_include") === "true";
+let ADDED_SECTIONS = [];
+try {
+	const parsed = JSON.parse(state("added_sections") || "[]");
+	if (Array.isArray(parsed)) ADDED_SECTIONS = parsed;
+} catch {
+	ADDED_SECTIONS = [];
+}
+
+function runGit(args) {
+	return execFileSync("git", args, { stdio: ["ignore", "pipe", "pipe"] }).toString();
+}
+
+function getIncludePaths() {
 	try {
-		execSync(`git config --global --unset-all include.path "${OUTPUT_FILE}"`);
-		console.log(`🧹 Removed include.path for ${OUTPUT_FILE}`);
+		return runGit(["config", "--global", "--get-all", "include.path"])
+			.split("\n")
+			.map((l) => l.trim())
+			.filter(Boolean);
 	} catch {
-		console.log("ℹ️ No include.path found to remove");
+		return [];
 	}
-	try {
-		if (fs.existsSync(OUTPUT_FILE)) {
-			fs.unlinkSync(OUTPUT_FILE);
-			console.log(`🗑️ Deleted ${OUTPUT_FILE}`);
+}
+
+/**
+ * `git config --unset-all include.path <value>` interprets <value> as a regex pattern, so a
+ * path like `/tmp/a.ini` would also match `/tmp/aXini`. Reading all values and re-adding
+ * everything except the exact OUTPUT_FILE string gives an exact-match removal instead.
+ */
+function removeIncludePathEntry() {
+	const values = getIncludePaths();
+	const remaining = values.filter((v) => v !== OUTPUT_FILE);
+	if (remaining.length === values.length) return false;
+	if (values.length > 0) runGit(["config", "--global", "--unset-all", "include.path"]);
+	for (const v of remaining) runGit(["config", "--global", "--add", "include.path", v]);
+	return true;
+}
+
+if (USE_INCLUDE) {
+	if (ADDED_INCLUDE) {
+		try {
+			if (removeIncludePathEntry()) {
+				console.log(`🧹 Removed include.path for ${OUTPUT_FILE}`);
+			} else {
+				console.log("ℹ️ No matching include.path found to remove");
+			}
+		} catch (e) {
+			console.error("⚠️ Failed to remove include.path:", e.message);
 		}
-	} catch (err) {
-		console.error("⚠️ Failed to delete include file:", err.message);
+	}
+	if (CREATED_FILE) {
+		try {
+			if (fs.existsSync(OUTPUT_FILE)) {
+				fs.unlinkSync(OUTPUT_FILE);
+				console.log(`🗑️ Deleted ${OUTPUT_FILE}`);
+			}
+		} catch (err) {
+			console.error("⚠️ Failed to delete include file:", err.message);
+		}
+	} else if (fs.existsSync(OUTPUT_FILE)) {
+		console.log(`ℹ️ ${OUTPUT_FILE} was not created by this action; leaving it in place.`);
 	}
 } else {
-	try {
-		const output = execSync("git config --global --list").toString();
-		const sections = new Set();
-		for (const line of output.split("\n")) {
-			const match = line.match(/^(url\..+)\.insteadof=/i);
-			if (match) {
-				sections.add(match[1]);
-			}
+	if (ADDED_SECTIONS.length === 0) {
+		console.log("ℹ️ No url rewrite entries recorded to remove");
+	}
+	for (const section of ADDED_SECTIONS) {
+		try {
+			runGit(["config", "--global", "--remove-section", section]);
+			console.log(`🧹 Removed git config section: ${section}`);
+		} catch (e) {
+			console.error(`⚠️ Failed to remove section ${section}:`, e.message);
 		}
-		if (sections.size === 0) {
-			console.log("ℹ️ No url rewrite entries found to remove");
-		}
-		for (const section of sections) {
-			try {
-				execSync(`git config --global --remove-section "${section}"`);
-				console.log(`🧹 Removed git config section: ${section}`);
-			} catch (e) {
-				console.error(`⚠️ Failed to remove section ${section}:`, e.message);
-			}
-		}
-	} catch (e) {
-		console.error("⚠️ Failed to list git config:", e.message);
 	}
 }

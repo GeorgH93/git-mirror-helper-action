@@ -17,101 +17,172 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const SERVER_URL = process.env.INPUT_SERVER;
+const SERVER_URL_RAW = process.env.INPUT_SERVER;
 const ORG = process.env.INPUT_ORG;
 const API_TOKEN = process.env.INPUT_API_TOKEN;
 const USE_INCLUDE = (process.env.INPUT_USE_INCLUDE || "true").toLowerCase() !== "false";
 const OUTPUT_FILE = process.env.INPUT_OUTPUT_FILE || path.join(os.homedir(), ".git-mirrors");
 
+const FETCH_TIMEOUT_MS = 30000;
+const PAGE_SIZE = 50;
+const MAX_PAGES = 200; // safety cap (200 pages * 50 repos = 10,000 repos)
+
+/** Config sections added by this action (url.<new>.insteadOf), cleaned up in the post step. */
+let addedSections = [];
+let sectionsStateFlushed = false;
+
+/** Run git with argument arrays only - never interpolate values into a shell string. */
+function runGit(args) {
+	return execFileSync("git", args, { stdio: ["ignore", "pipe", "pipe"] }).toString();
+}
+
+function appendState(name, value) {
+	if (process.env.GITHUB_STATE) {
+		fs.appendFileSync(process.env.GITHUB_STATE, `${name}=${value}\n`);
+	}
+}
+
+/** Record added sections so cleanup can remove exactly what we added, even if main fails. */
+function flushSectionsState() {
+	if (sectionsStateFlushed) return;
+	sectionsStateFlushed = true;
+	appendState("added_sections", JSON.stringify(addedSections));
+}
+
 function stripGitSuffix(url) {
 	return url.endsWith(".git") ? url.slice(0, -4) : url;
 }
 
-async function fetchRepos() {
-	console.log(`🔍 Fetching repos from org: ${ORG} on ${SERVER_URL}`);
+/**
+ * Reject URLs that could corrupt git config files or come from malformed API data.
+ * Blocks quotes, backslashes, whitespace, comment characters and control characters.
+ */
+function isSafeUrl(url) {
+	return typeof url === "string" && url.length > 0 && !/[\s"'\\#;\x00-\x1f\x7f]/.test(url);
+}
+
+/** Normalize the server base URL: trim, strip trailing slashes, default scheme to https, validate. */
+function normalizeServer(raw) {
+	let s = raw.trim().replace(/\/+$/, "");
+	if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+	return new URL(s).toString().replace(/\/+$/, "");
+}
+
+function getIncludePaths() {
+	try {
+		return runGit(["config", "--global", "--get-all", "include.path"])
+			.split("\n")
+			.map((l) => l.trim())
+			.filter(Boolean);
+	} catch {
+		return []; // key not set - git exits non-zero
+	}
+}
+
+function addIncludeFile() {
+	console.log(`📝 Using include file: ${OUTPUT_FILE}`);
+	fs.mkdirSync(path.dirname(OUTPUT_FILE), { recursive: true });
+	if (!fs.existsSync(OUTPUT_FILE)) {
+		fs.writeFileSync(OUTPUT_FILE, "");
+		appendState("created_file", "true");
+	} else {
+		console.log(`ℹ️ ${OUTPUT_FILE} already exists; appending to it. The file will not be deleted during cleanup.`);
+	}
+	if (!getIncludePaths().includes(OUTPUT_FILE)) {
+		runGit(["config", "--global", "--add", "include.path", OUTPUT_FILE]);
+		appendState("added_include", "true");
+	} else {
+		console.log("ℹ️ include.path already points to this file, skipping.");
+	}
+}
+
+function addRewrite(oldUrl, newUrl) {
+	if (USE_INCLUDE) {
+		fs.appendFileSync(OUTPUT_FILE, `\n[url "${newUrl}"]\n\tinsteadOf = ${oldUrl}\n`);
+	} else {
+		const section = `url.${newUrl}`;
+		runGit(["config", "--global", "--add", `${section}.insteadOf`, oldUrl]);
+		addedSections.push(section);
+	}
+}
+
+async function fetchRepos(server) {
+	console.log(`🔍 Fetching repos from org: ${ORG} on ${server}`);
 
 	let page = 1;
 	let repos = [];
+	let done = false;
 
-	while (true) {
-		let url = `${SERVER_URL}/api/v1/orgs/${ORG}/repos?page=${page}&limit=50`;
-		var resp;
-		if (!API_TOKEN) {
-			resp = await fetch(url);
-		} else {
-			resp = await fetch(url, { headers: { Authorization: `token ${API_TOKEN}` } });
+	while (!done) {
+		if (page > MAX_PAGES) {
+			throw new Error(`Exceeded maximum of ${MAX_PAGES} pages while fetching repos. Aborting to avoid an infinite loop.`);
 		}
 
+		const url = `${server}/api/v1/orgs/${encodeURIComponent(ORG)}/repos?page=${page}&limit=${PAGE_SIZE}`;
+		const options = { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) };
+		if (API_TOKEN) options.headers = { Authorization: `token ${API_TOKEN}` };
+
+		const resp = await fetch(url, options);
 		if (!resp.ok) {
-			console.error("❌ Failed to fetch repos:", resp.status, await resp.text());
-			process.exit(1);
+			throw new Error(`Failed to fetch repos: ${resp.status} ${await resp.text()}`);
 		}
 
 		const data = await resp.json();
-		if (data.length === 0) break;
-
-		repos = repos.concat(data);
-		page++;
+		if (!Array.isArray(data) || data.length === 0) {
+			done = true;
+		} else {
+			repos = repos.concat(data);
+			page++;
+		}
 	}
 
 	return repos;
 }
 
-function addIncludeFile() {
-	console.log(`📝 Using include file: ${OUTPUT_FILE}`);
-	if (!fs.existsSync(OUTPUT_FILE)) {
-		fs.writeFileSync(OUTPUT_FILE, "[include]\n");
-	}
-
-	try {
-		execSync(`git config --global --add include.path "${OUTPUT_FILE}"`);
-	} catch (e) {
-		console.error("⚠️ Failed to add include.path:", e.message);
-	}
-}
-
-
-function addRewrite(oldUrl, newUrl) {
-	if (USE_INCLUDE) {
-		const configLine = `\n[url "${newUrl}"]\n\tinsteadOf = ${oldUrl}\n`;
-		fs.appendFileSync(OUTPUT_FILE, configLine);
-	} else {
-		execSync(`git config --global url."${newUrl}".insteadOf "${oldUrl}"`);
-	}
-}
-
 async function main() {
-	if (!SERVER_URL || !ORG) {
+	if (!SERVER_URL_RAW || !ORG) {
 		console.error("❌ Missing required inputs: server, org");
+		process.exit(1);
+	}
+
+	let server;
+	try {
+		server = normalizeServer(SERVER_URL_RAW);
+	} catch (e) {
+		console.error(`❌ Invalid server URL "${SERVER_URL_RAW}":`, e.message);
 		process.exit(1);
 	}
 
 	if (USE_INCLUDE) addIncludeFile();
 
-	const repos = await fetchRepos();
+	const repos = await fetchRepos(server);
 	for (const repo of repos) {
-		if (repo.mirror) {
-			console.log(`➡️ Mirror repo found: ${repo.full_name}`);
+		if (!repo || !repo.mirror) continue;
+		if (!isSafeUrl(repo.original_url) || !isSafeUrl(repo.clone_url)) {
+			console.warn(`⚠️ Skipping mirror ${repo.full_name || "(unknown)"}: missing or unsafe URL values.`);
+			continue;
+		}
 
-			const oldUrl = stripGitSuffix(repo.original_url);
-			const newUrl = stripGitSuffix(repo.clone_url); // force HTTPS
+		const oldUrl = stripGitSuffix(repo.original_url);
+		const newUrl = stripGitSuffix(repo.clone_url);
 
-			console.log(`   Adding rewrite: ${newUrl} insteadOf ${oldUrl}`);
+		console.log(`➡️ Adding rewrite for ${repo.full_name}: ${newUrl} insteadOf ${oldUrl}`);
 
-			try {
-				addRewrite(oldUrl, newUrl);
-			} catch (e) {
-				console.error("⚠️ Failed to set git config:", e.message);
-			}
+		try {
+			addRewrite(oldUrl, newUrl);
+		} catch (e) {
+			console.error("⚠️ Failed to set git config:", e.message);
 		}
 	}
 
-	if ((USE_INCLUDE || process.env.INPUT_OUTPUT_FILE) && process.env.GITHUB_OUTPUT) {
+	flushSectionsState();
+
+	if (USE_INCLUDE && process.env.GITHUB_OUTPUT) {
 		fs.appendFileSync(process.env.GITHUB_OUTPUT, `git-mirror-list-file=${OUTPUT_FILE}\n`);
 	}
 
@@ -119,6 +190,7 @@ async function main() {
 }
 
 main().catch((err) => {
-	console.error("Fatal error:", err);
+	flushSectionsState();
+	console.error("Fatal error:", err.message || err);
 	process.exit(1);
 });
