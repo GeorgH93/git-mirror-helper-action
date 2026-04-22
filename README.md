@@ -90,7 +90,7 @@ To specify a custom location for the mirror list file:
 | `org` | Organization name in your git server | ✅ Yes | - |
 | `api_token` | API token for authentication (recommended for private repos) | ❌ No | - |
 | `use_include` | Write rewrites to a separate include file instead of global config | ❌ No | `true` |
-| `output_file` | Custom path for the mirror list file | ❌ No | `~/.git-mirrors` |
+| `output_file` | Custom path for the mirror list file (only used when `use_include` is `true`) | ❌ No | `~/.git-mirrors` |
 
 ## Outputs
 
@@ -102,7 +102,7 @@ To specify a custom location for the mirror list file:
 
 1. **Discovery**: The action connects to your git server and fetches all repositories in the specified organization
 2. **Configuration**: It sets up git URL rewrite rules that map GitHub URLs to your git server URLs
-3. **Cleanup**: After the workflow completes, the action automatically cleans up the configuration
+3. **Cleanup**: After the workflow completes, the action removes only the configuration entries it added, leaving any pre-existing git configuration untouched
 
 ### URL Rewriting
 
@@ -117,12 +117,22 @@ https://git.example.com/my-org/my-repo.git
 
 This allows you to use GitHub URLs in your workflows while actually pulling from your mirror server.
 
+> ⚠️ **Note:** `insteadOf` rewrites apply to **all** git operations, not just clones and fetches. While the rewrites are active, `git push` to the original URLs is also redirected to your mirror server. If you need pushes to reach the original server, remove the rewrites (or the include entry) before pushing, or add [`pushInsteadOf`](https://git-scm.com/docs/git-config#Documentation/git-config.txt-urlltpushInsteadOfgt) rules pointing back to the original URLs.
+
 ## Configuration Options
 
 ### `use_include` Parameter
 
 - **`true` (default)**: Creates a separate git include file for the rewrite rules, keeping your global git config clean
 - **`false`**: Writes the rewrite rules directly to the global git configuration
+
+### Cleanup Behavior
+
+The post step removes **only the configuration this action added** (tracked via the action state between the main and post steps):
+
+- Pre-existing `url.*.insteadOf` entries in your global git config are never touched
+- If the configured output file already existed before the action ran, the rewrites are appended to it and the file is **left in place** during cleanup
+- Files and include entries created by the action itself are removed automatically
 
 ## Authentication
 
