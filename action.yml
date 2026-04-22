@@ -17,7 +17,7 @@ inputs:
     required: false
     default: "true"
   output_file:
-    description: "Custom path for the mirror list file"
+    description: "Custom path for the mirror list file (only used when use_include is true)"
     required: false
 outputs:
   git-mirror-list-file:
