@@ -81,7 +81,7 @@ function addRewrite(oldUrl, newUrl) {
 		const configLine = `\n[url "${newUrl}"]\n\tinsteadOf = ${oldUrl}\n`;
 		fs.appendFileSync(OUTPUT_FILE, configLine);
 	} else {
-		execSync(`git config --global url."${newUrl}".insteadOf "${oldUrl}"`);
+		execSync(`git config --global --add url."${newUrl}".insteadOf "${oldUrl}"`);
 	}
 }
 
