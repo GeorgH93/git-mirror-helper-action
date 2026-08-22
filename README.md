@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Setup Git Mirrors
-        uses: GeorgH93/git-mirror-helper-action@v1
+        uses: GeorgH93/git-mirror-helper-action@v2
         with:
           server: 'https://git.example.com'
           org: 'my-organization'
@@ -52,7 +52,7 @@ jobs:
     steps:
       - name: Setup Git Mirrors
         id: mirrors
-        uses: GeorgH93/git-mirror-helper-action@v1
+        uses: GeorgH93/git-mirror-helper-action@v2
         with:
           server: 'https://git.example.com'
           org: 'my-organization'
@@ -75,7 +75,7 @@ To specify a custom location for the mirror list file:
 ```yaml
 - name: Setup Git Mirrors
   id: mirrors
-  uses: GeorgH93/git-mirror-helper-action@v1
+  uses: GeorgH93/git-mirror-helper-action@v2
   with:
     server: 'https://git.example.com'
     org: 'my-organization'
