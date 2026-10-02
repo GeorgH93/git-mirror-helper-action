@@ -31,6 +31,8 @@ function state(name) {
 
 const CREATED_FILE = state("created_file") === "true";
 const ADDED_INCLUDE = state("added_include") === "true";
+const OVERWROTE_FILE = state("overwrote_file") === "true";
+const BACKUP_FILE = state("backup_file");
 let ADDED_SECTIONS = [];
 try {
 	const parsed = JSON.parse(state("added_sections") || "[]");
@@ -69,6 +71,18 @@ function removeIncludePathEntry() {
 }
 
 if (USE_INCLUDE) {
+	if (BACKUP_FILE) {
+		try {
+			if (fs.existsSync(BACKUP_FILE)) {
+				fs.renameSync(BACKUP_FILE, OUTPUT_FILE);
+				console.log(`🧹 Restored original ${OUTPUT_FILE} from backup`);
+			} else {
+				console.warn(`⚠️ Backup ${BACKUP_FILE} not found; leaving ${OUTPUT_FILE} in place.`);
+			}
+		} catch (e) {
+			console.error("⚠️ Failed to restore backup:", e.message);
+		}
+	}
 	if (ADDED_INCLUDE) {
 		try {
 			if (removeIncludePathEntry()) {
@@ -80,7 +94,7 @@ if (USE_INCLUDE) {
 			console.error("⚠️ Failed to remove include.path:", e.message);
 		}
 	}
-	if (CREATED_FILE) {
+	if (CREATED_FILE || OVERWROTE_FILE) {
 		try {
 			if (fs.existsSync(OUTPUT_FILE)) {
 				fs.unlinkSync(OUTPUT_FILE);
@@ -89,7 +103,7 @@ if (USE_INCLUDE) {
 		} catch (err) {
 			console.error("⚠️ Failed to delete include file:", err.message);
 		}
-	} else if (fs.existsSync(OUTPUT_FILE)) {
+	} else if (!BACKUP_FILE && fs.existsSync(OUTPUT_FILE)) {
 		console.log(`ℹ️ ${OUTPUT_FILE} was not created by this action; leaving it in place.`);
 	}
 } else {

@@ -27,6 +27,8 @@ const ORG = process.env.INPUT_ORG;
 const API_TOKEN = process.env.INPUT_API_TOKEN;
 const USE_INCLUDE = (process.env.INPUT_USE_INCLUDE || "true").toLowerCase() !== "false";
 const OUTPUT_FILE = process.env.INPUT_OUTPUT_FILE || path.join(os.homedir(), ".git-mirrors");
+const IF_FILE_EXISTS = process.env.INPUT_IF_FILE_EXISTS || "append";
+const IF_FILE_EXISTS_VALUES = ["skip", "fail", "append", "overwrite_keep_on_cleanup", "overwrite_restore_on_cleanup", "overwrite_delete_on_cleanup"];
 
 const FETCH_TIMEOUT_MS = 30000;
 const PAGE_SIZE = 50;
@@ -84,21 +86,21 @@ function getIncludePaths() {
 	}
 }
 
-function addIncludeFile() {
-	console.log(`📝 Using include file: ${OUTPUT_FILE}`);
-	fs.mkdirSync(path.dirname(OUTPUT_FILE), { recursive: true });
-	if (!fs.existsSync(OUTPUT_FILE)) {
-		fs.writeFileSync(OUTPUT_FILE, "");
-		appendState("created_file", "true");
-	} else {
-		console.log(`ℹ️ ${OUTPUT_FILE} already exists; appending to it. The file will not be deleted during cleanup.`);
-	}
+/** Wire the include file into global git config; records ownership only when this action adds the entry. */
+function ensureIncludePath() {
 	if (!getIncludePaths().includes(OUTPUT_FILE)) {
 		runGit(["config", "--global", "--add", "include.path", OUTPUT_FILE]);
 		appendState("added_include", "true");
 	} else {
 		console.log("ℹ️ include.path already points to this file, skipping.");
 	}
+}
+
+/** Create the include file, recording ownership - only called when it does not exist yet. */
+function createIncludeFile() {
+	fs.mkdirSync(path.dirname(OUTPUT_FILE), { recursive: true });
+	fs.writeFileSync(OUTPUT_FILE, "");
+	appendState("created_file", "true");
 }
 
 function addRewrite(oldUrl, newUrl) {
@@ -150,6 +152,11 @@ async function main() {
 		process.exit(1);
 	}
 
+	if (!IF_FILE_EXISTS_VALUES.includes(IF_FILE_EXISTS)) {
+		console.error(`❌ Invalid value for if_file_exists: "${IF_FILE_EXISTS}" (valid: ${IF_FILE_EXISTS_VALUES.join(", ")})`);
+		process.exit(1);
+	}
+
 	let server;
 	try {
 		server = normalizeServer(SERVER_URL_RAW);
@@ -158,9 +165,47 @@ async function main() {
 		process.exit(1);
 	}
 
-	if (USE_INCLUDE) addIncludeFile();
+	let fileExists = false;
+	if (USE_INCLUDE) {
+		fileExists = fs.existsSync(OUTPUT_FILE);
+		if (fileExists && IF_FILE_EXISTS === "fail") {
+			console.error(`❌ ${OUTPUT_FILE} already exists and if_file_exists is set to fail.`);
+			process.exit(1);
+		}
+		if (fileExists && IF_FILE_EXISTS === "skip") {
+			console.log(`⏭️ ${OUTPUT_FILE} already exists and if_file_exists is set to skip - nothing to do.`);
+			if (process.env.GITHUB_OUTPUT) {
+				fs.appendFileSync(process.env.GITHUB_OUTPUT, `git-mirror-list-file=${OUTPUT_FILE}\n`);
+			}
+			return;
+		}
+		console.log(`📝 Using include file: ${OUTPUT_FILE}`);
+		if (fileExists) {
+			ensureIncludePath();
+		} else {
+			createIncludeFile();
+			ensureIncludePath();
+		}
+	}
 
 	const repos = await fetchRepos(server);
+
+	if (USE_INCLUDE && fileExists && IF_FILE_EXISTS.startsWith("overwrite_")) {
+		if (IF_FILE_EXISTS === "overwrite_restore_on_cleanup") {
+			const backupPath = `${OUTPUT_FILE}.gmr-bak`;
+			fs.copyFileSync(OUTPUT_FILE, backupPath);
+			appendState("backup_file", backupPath);
+			console.log(`📝 Existing file backed up to ${backupPath}.`);
+		}
+		if (IF_FILE_EXISTS === "overwrite_delete_on_cleanup") {
+			appendState("overwrote_file", "true");
+		}
+		fs.writeFileSync(OUTPUT_FILE, "");
+		console.log(`📝 Overwrote existing file ${OUTPUT_FILE} (${IF_FILE_EXISTS}).`);
+	} else if (USE_INCLUDE && fileExists) {
+		console.log(`ℹ️ ${OUTPUT_FILE} already exists; appending to it. The file will not be deleted during cleanup.`);
+	}
+
 	for (const repo of repos) {
 		if (!repo || !repo.mirror) continue;
 		if (!isSafeUrl(repo.original_url) || !isSafeUrl(repo.clone_url)) {

@@ -285,11 +285,206 @@ function scenarioInjectionViaOutputFile() {
 	assert(git(envG, "config", "--global", "--get-all", "include.path") === outputFile, "output_file with metachars stored literally");
 }
 
+function scenarioSkipExisting() {
+	console.log("▶ Scenario H: if_file_exists=skip touches nothing but the action output");
+	const home = tempHome("h");
+	const outputFile = path.join(home, "mirrors.ini");
+	const original = '[url "https://mirror.example.com/pre"]\n\tinsteadOf = https://pre.example.com/\n';
+	fs.writeFileSync(outputFile, original);
+	const stateFile = path.join(home, "state");
+	const githubOutput = path.join(home, "out");
+	const requestsFile = path.join(home, "requests.log");
+	const envH = {
+		HOME: home,
+		INPUT_SERVER: "https://git.example.com",
+		INPUT_ORG: "testorg",
+		INPUT_API_TOKEN: "tok",
+		INPUT_OUTPUT_FILE: outputFile,
+		INPUT_IF_FILE_EXISTS: "skip",
+		GITHUB_STATE: stateFile,
+		GITHUB_OUTPUT: githubOutput,
+		MOCK_REQUESTS_FILE: requestsFile,
+	};
+
+	const r = runRunner("main", envH);
+	assert(r.status === 0, `main exits 0 (got ${r.status}${r.status !== 0 ? `: ${(r.stderr || "").slice(0, 300)}` : ""})`);
+	assert(fs.readFileSync(outputFile, "utf8") === original, "existing file content untouched");
+	assert(git(envH, "config", "--global", "--get-all", "include.path") === "", "include.path not added");
+	assert(readRequests(requestsFile).length === 0, "no API requests made");
+	assert(fs.existsSync(githubOutput) && fs.readFileSync(githubOutput, "utf8") === `git-mirror-list-file=${outputFile}\n`, "action output written");
+
+	const stateEnv = readStateEnv(stateFile);
+	assert(!("STATE_created_file" in stateEnv) && !("STATE_added_include" in stateEnv), "no ownership state recorded");
+
+	const post = runRunner("post", { ...envH, ...stateEnv });
+	assert(post.status === 0, "cleanup exits 0");
+	assert(fs.readFileSync(outputFile, "utf8") === original, "file still untouched after cleanup");
+}
+
+function scenarioFailExisting() {
+	console.log("▶ Scenario I: if_file_exists=fail exits 1 without side effects");
+	const home = tempHome("i");
+	const outputFile = path.join(home, "mirrors.ini");
+	const original = '[url "https://mirror.example.com/pre"]\n\tinsteadOf = https://pre.example.com/\n';
+	fs.writeFileSync(outputFile, original);
+	const stateFile = path.join(home, "state");
+	const requestsFile = path.join(home, "requests.log");
+	const envI = {
+		HOME: home,
+		INPUT_SERVER: "https://git.example.com",
+		INPUT_ORG: "testorg",
+		INPUT_API_TOKEN: "tok",
+		INPUT_OUTPUT_FILE: outputFile,
+		INPUT_IF_FILE_EXISTS: "fail",
+		GITHUB_STATE: stateFile,
+		MOCK_REQUESTS_FILE: requestsFile,
+	};
+
+	const r = runRunner("main", envI);
+	assert(r.status === 1, `main exits 1 (got ${r.status})`);
+	assert((r.stderr || "").includes("already exists"), "error mentions the existing file");
+	assert(fs.readFileSync(outputFile, "utf8") === original, "file content untouched");
+	assert(git(envI, "config", "--global", "--get-all", "include.path") === "", "include.path not added");
+	assert(readRequests(requestsFile).length === 0, "no API requests made");
+
+	const stateEnv = readStateEnv(stateFile);
+	assert(!("STATE_created_file" in stateEnv) && !("STATE_added_include" in stateEnv) && !("STATE_backup_file" in stateEnv), "no state recorded");
+}
+
+function scenarioOverwriteKeep() {
+	console.log("▶ Scenario J: if_file_exists=overwrite_keep_on_cleanup replaces content, file survives cleanup");
+	const home = tempHome("j");
+	const outputFile = path.join(home, "mirrors.ini");
+	fs.writeFileSync(outputFile, '[url "https://mirror.example.com/pre"]\n\tinsteadOf = https://pre.example.com/\n');
+	const stateFile = path.join(home, "state");
+	const requestsFile = path.join(home, "requests.log");
+	const envJ = {
+		HOME: home,
+		INPUT_SERVER: "https://git.example.com",
+		INPUT_ORG: "testorg",
+		INPUT_API_TOKEN: "tok",
+		INPUT_OUTPUT_FILE: outputFile,
+		INPUT_IF_FILE_EXISTS: "overwrite_keep_on_cleanup",
+		GITHUB_STATE: stateFile,
+		MOCK_REQUESTS_FILE: requestsFile,
+		PWN_FILE: PWN,
+	};
+
+	const r = runRunner("main", envJ);
+	assert(r.status === 0, `main exits 0 (got ${r.status}${r.status !== 0 ? `: ${(r.stderr || "").slice(0, 300)}` : ""})`);
+	assert(!fs.existsSync(PWN), "no shell command execution via API-provided URL");
+	const content = fs.readFileSync(outputFile, "utf8");
+	assert(!content.includes("pre.example.com"), "old content gone");
+	assert(content.includes('[url "https://git.example.com/my-org/repo1"]'), "fresh rewrite written");
+	assert(!fs.existsSync(`${outputFile}.gmr-bak`), "no backup file created");
+
+	const stateEnv = readStateEnv(stateFile);
+	assert(stateEnv.STATE_added_include === "true", "include.path ownership recorded");
+	assert(!("STATE_created_file" in stateEnv) && !("STATE_overwrote_file" in stateEnv) && !("STATE_backup_file" in stateEnv), "no file-ownership state recorded");
+
+	const post = runRunner("post", { ...envJ, ...stateEnv });
+	assert(post.status === 0, "cleanup exits 0");
+	assert(git(envJ, "config", "--global", "--get-all", "include.path") === "", "include.path removed");
+	assert(fs.existsSync(outputFile) && fs.readFileSync(outputFile, "utf8").includes("repo1"), "file kept with action rewrites");
+}
+
+function scenarioOverwriteRestore() {
+	console.log("▶ Scenario K: if_file_exists=overwrite_restore_on_cleanup restores the original file");
+	const home = tempHome("k");
+	const outputFile = path.join(home, "mirrors.ini");
+	const original = '[url "https://mirror.example.com/pre"]\n\tinsteadOf = https://pre.example.com/\n';
+	fs.writeFileSync(outputFile, original);
+	const stateFile = path.join(home, "state");
+	const requestsFile = path.join(home, "requests.log");
+	const envK = {
+		HOME: home,
+		INPUT_SERVER: "https://git.example.com",
+		INPUT_ORG: "testorg",
+		INPUT_API_TOKEN: "tok",
+		INPUT_OUTPUT_FILE: outputFile,
+		INPUT_IF_FILE_EXISTS: "overwrite_restore_on_cleanup",
+		GITHUB_STATE: stateFile,
+		MOCK_REQUESTS_FILE: requestsFile,
+		PWN_FILE: PWN,
+	};
+
+	const r = runRunner("main", envK);
+	assert(r.status === 0, `main exits 0 (got ${r.status}${r.status !== 0 ? `: ${(r.stderr || "").slice(0, 300)}` : ""})`);
+	const backupPath = `${outputFile}.gmr-bak`;
+	assert(fs.existsSync(backupPath) && fs.readFileSync(backupPath, "utf8") === original, "backup holds the original content");
+	assert(!fs.readFileSync(outputFile, "utf8").includes("pre.example.com"), "file rewritten with fresh rewrites only");
+
+	const stateEnv = readStateEnv(stateFile);
+	assert(stateEnv.STATE_backup_file === backupPath, "backup path recorded in state");
+
+	const post = runRunner("post", { ...envK, ...stateEnv });
+	assert(post.status === 0, "cleanup exits 0");
+	assert(fs.readFileSync(outputFile, "utf8") === original, "original content restored");
+	assert(!fs.existsSync(backupPath), "backup consumed");
+	assert(git(envK, "config", "--global", "--get-all", "include.path") === "", "include.path removed");
+}
+
+function scenarioOverwriteDelete() {
+	console.log("▶ Scenario L: if_file_exists=overwrite_delete_on_cleanup removes the overwritten file");
+	const home = tempHome("l");
+	const outputFile = path.join(home, "mirrors.ini");
+	fs.writeFileSync(outputFile, '[url "https://mirror.example.com/pre"]\n\tinsteadOf = https://pre.example.com/\n');
+	const stateFile = path.join(home, "state");
+	const requestsFile = path.join(home, "requests.log");
+	const envL = {
+		HOME: home,
+		INPUT_SERVER: "https://git.example.com",
+		INPUT_ORG: "testorg",
+		INPUT_API_TOKEN: "tok",
+		INPUT_OUTPUT_FILE: outputFile,
+		INPUT_IF_FILE_EXISTS: "overwrite_delete_on_cleanup",
+		GITHUB_STATE: stateFile,
+		MOCK_REQUESTS_FILE: requestsFile,
+		PWN_FILE: PWN,
+	};
+
+	const r = runRunner("main", envL);
+	assert(r.status === 0, `main exits 0 (got ${r.status}${r.status !== 0 ? `: ${(r.stderr || "").slice(0, 300)}` : ""})`);
+	const content = fs.readFileSync(outputFile, "utf8");
+	assert(!content.includes("pre.example.com") && content.includes("repo1"), "file contains only fresh rewrites");
+
+	const stateEnv = readStateEnv(stateFile);
+	assert(stateEnv.STATE_overwrote_file === "true", "overwrote_file recorded in state");
+	assert(!("STATE_created_file" in stateEnv), "created_file not set for a pre-existing file");
+
+	const post = runRunner("post", { ...envL, ...stateEnv });
+	assert(post.status === 0, "cleanup exits 0");
+	assert(!fs.existsSync(outputFile), "overwritten file deleted");
+	assert(git(envL, "config", "--global", "--get-all", "include.path") === "", "include.path removed");
+}
+
+function scenarioInvalidValue() {
+	console.log("▶ Scenario M: invalid if_file_exists value fails listing the valid options");
+	const home = tempHome("m");
+	const r = runRunner("main", {
+		HOME: home,
+		INPUT_SERVER: "https://git.example.com",
+		INPUT_ORG: "testorg",
+		INPUT_IF_FILE_EXISTS: "overwrite",
+	});
+	assert(r.status === 1, `main exits 1 (got ${r.status})`);
+	assert((r.stderr || "").includes("Invalid value for if_file_exists"), "invalid-value message printed");
+	for (const value of ["skip", "fail", "append", "overwrite_keep_on_cleanup", "overwrite_restore_on_cleanup", "overwrite_delete_on_cleanup"]) {
+		assert((r.stderr || "").includes(value), `message lists "${value}"`);
+	}
+}
+
 scenarioIncludeMode();
 scenarioDirectMode();
 scenarioPreExistingFile();
 scenarioSiblingIncludePath();
 scenarioInjectionViaOutputFile();
+scenarioSkipExisting();
+scenarioFailExisting();
+scenarioOverwriteKeep();
+scenarioOverwriteRestore();
+scenarioOverwriteDelete();
+scenarioInvalidValue();
 scenarioBadServer();
 scenarioMissingInputs();
 
