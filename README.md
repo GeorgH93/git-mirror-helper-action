@@ -8,11 +8,11 @@ This action fetches all repositories from a specified organization on your git s
 
 ## Features
 
-- 🔄 Automatically discovers all repositories in an organization
-- ⚙️ Sets up git URL rewrite rules for seamless mirror access  
-- 🔐 Supports authentication via API tokens
-- 📝 Configurable output
-- 🧹 Automatic cleanup after workflow completion
+- Automatically discovers all repositories in an organization
+- Sets up git URL rewrite rules for seamless mirror access  
+- Supports authentication via API tokens
+- Configurable output
+- Automatic cleanup after workflow completion
 
 ## Usage
 
@@ -91,6 +91,7 @@ To specify a custom location for the mirror list file:
 | `api_token` | API token for authentication (recommended for private repos) | ❌ No | - |
 | `use_include` | Write rewrites to a separate include file instead of global config | ❌ No | `true` |
 | `output_file` | Custom path for the mirror list file (only used when `use_include` is `true`) | ❌ No | `~/.git-mirrors` |
+| `if_file_exists` | What to do when the mirror list file already exists: `skip`, `fail`, `append`, `overwrite_keep_on_cleanup`, `overwrite_restore_on_cleanup` or `overwrite_delete_on_cleanup` (only used when `use_include` is `true`) | ❌ No | `append` |
 
 ## Outputs
 
@@ -131,8 +132,23 @@ This allows you to use GitHub URLs in your workflows while actually pulling from
 The post step removes **only the configuration this action added** (tracked via the action state between the main and post steps):
 
 - Pre-existing `url.*.insteadOf` entries in your global git config are never touched
-- If the configured output file already existed before the action ran, the rewrites are appended to it and the file is **left in place** during cleanup
+- If the configured output file already existed before the action ran, the rewrites are appended to it and the file is **left in place** during cleanup (the default `if_file_exists` behavior, see below)
 - Files and include entries created by the action itself are removed automatically
+
+### `if_file_exists` Parameter
+
+Controls what happens when the mirror list file already exists (only used when `use_include` is `true`). When the file does **not** exist, every value behaves the same: the file is created and cleaned up after the workflow.
+
+| Value | Main step | Post/cleanup step |
+|-------|-----------|-------------------|
+| `append` (default) | Rewrites are appended to the existing file | File is left in place |
+| `skip` | Nothing is written and nothing is fetched; the action succeeds and still exports `git-mirror-list-file` | Nothing to clean up |
+| `fail` | The action fails immediately with an error | Nothing to clean up |
+| `overwrite_keep_on_cleanup` | The file is replaced with only the freshly generated rewrites | File is left in place with the generated rewrites |
+| `overwrite_restore_on_cleanup` | The existing file is backed up to `<file>.gmr-bak`, then replaced with the fresh rewrites | The original content is restored from the backup |
+| `overwrite_delete_on_cleanup` | The file is replaced with the fresh rewrites | The file is deleted |
+
+An invalid value fails the action with an error listing the valid options.
 
 ## Authentication
 
@@ -152,9 +168,3 @@ with:
 ### Public Repositories
 
 For public organizations & repositories, the `api_token` parameter is optional, but recommended to avoid potential rate limiting.
-
-## Compatibility
-
-- ✅ **Tested**: Gitea and Forgejo for hosting mirrors
-- ⚠️ **Experimental**: Other git servers with compatible APIs
-- 🚀 **Runners**: Works on `ubuntu-latest`, `windows-latest`, and `macos-latest`
